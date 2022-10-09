@@ -13,8 +13,8 @@ version:            0.1.0.0
 
 license: Apache-2.0
 license-files: LICENSE
-author:             Your name
-maintainer:         Your email
+author:             Juan Salvador Magan Valero
+maintainer:         jmaganvalero@gmail.com
 
 -- A copyright notice.
 -- copyright:
@@ -41,12 +41,13 @@ common lang
 library
     import: lang
     exposed-modules:
-      NFTStoreV1
+      CardanoMarketplace
       Utils.Deploy
       Utils.Plutus
     build-depends:
       base >= 4.9 && < 5,
       aeson -any,
+      base16-bytestring -any,
       bytestring -any,
       cardano-api -any,
       containers -any,

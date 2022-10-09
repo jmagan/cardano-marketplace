@@ -11,7 +11,7 @@
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeOperators         #-}
 
-module NFTStoreV1 (ContractParams (..), ContractDatum (..), ContractRedeemer (..), endpoints, GrabParams (..), StartParams (..), validator, scrAddress) where
+module CardanoMarketplace (ContractParams (..), ContractDatum (..), ContractRedeemer (..), endpoints, BuyParams (..), StartParams (..), validator, scrAddress) where
 
 import           Control.Lens                (review)
 import           Control.Monad               (void)
@@ -45,7 +45,7 @@ import Plutus.Script.Utils.V1.Scripts (datumHash)
 
 data ContractParams = ContractParams
     { unBackendPubkeyHash     :: !PubKeyHash
-    , unMarketOwnerPubkeyHash :: !PubKeyHash
+    , unRoyaltiesPubkeyHash :: !PubKeyHash
     }
     deriving (Show, Generic, ToJSON, FromJSON)
 
@@ -71,7 +71,7 @@ PlutusTx.makeLift ''ContractRedeemer
 -- traceIfFalse ("Token : " <> decodeUtf8 (consByteString (numberTokenOutScript + 0x30) emptyByteString)) (numberTokenOutScript == 9)
 -- Errors:
 -- E1 -> Not enough funds to the backend
--- E2 -> Not enough funds to the market owner
+-- E2 -> Not enough funds for royalties
 -- E3 -> Not enough funds to the seller
 -- E4 -> The validator must validate same scripts inputs
 -- E5 -> All outputs must have same datum
@@ -81,8 +81,8 @@ PlutusTx.makeLift ''ContractRedeemer
 mkValidator :: ContractParams -> ContractDatum -> ContractRedeemer -> ScriptContext -> Bool
 mkValidator p d (BuyAction qty) ctx =
   traceIfFalse "E1" (valueToBackend `Value.geq` (valueFromBackend <> toValue (lovelaceOf ((totalTransactionCost * 5) `divideInteger` 1_000))))
-    && traceIfFalse "E2" (valueToMarketOwner `Value.geq` toValue (lovelaceOf ((totalTransactionCost * 40) `divideInteger` 1_000)))
-    && traceIfFalse "E3" (valueToSeller `Value.geq` totalTransactionValue totalTransactionCost adaOutScript (unMarketOwnerPubkeyHash p) (cdSellerPubkeyHash d))
+    && traceIfFalse "E2" (valueToRoyalties `Value.geq` toValue (lovelaceOf ((totalTransactionCost * 40) `divideInteger` 1_000)))
+    && traceIfFalse "E3" (valueToSeller `Value.geq` totalTransactionValue totalTransactionCost adaOutScript (unRoyaltiesPubkeyHash p) (cdSellerPubkeyHash d))
     && traceIfFalse "E4" (numberOfInputsFromThisScript == numberOfScriptsInputs)
     && traceIfFalse "E5" allOutPutsHaveSameDatum
     && traceIfFalse "E6" (tokenOutScript == qty)
@@ -105,8 +105,8 @@ mkValidator p d (BuyAction qty) ctx =
     valueToBackend :: Value
     valueToBackend = valuePaidTo info (unBackendPubkeyHash p)
 
-    valueToMarketOwner :: Value
-    valueToMarketOwner = valuePaidTo info $ unMarketOwnerPubkeyHash p
+    valueToRoyalties :: Value
+    valueToRoyalties = valuePaidTo info $ unRoyaltiesPubkeyHash p
 
     valueToSeller :: Value
     valueToSeller = valuePaidTo info (cdSellerPubkeyHash d)
@@ -166,23 +166,23 @@ mkValidator _ d Close ctx = traceIfFalse "E7" $ txSignedBy (scriptContextTxInfo 
 
 -- Calculate minumum value to the seller
 totalTransactionValue :: Integer -> Value -> PubKeyHash -> PubKeyHash -> Value
-totalTransactionValue totalTransactionCost adaOutScript marketOwnerPubKeyHash sellerPubKeyHash = lovelaceValueOf totalTransactionCost
+totalTransactionValue totalTransactionCost adaOutScript royaltiesPubKeyHash sellerPubKeyHash = lovelaceValueOf totalTransactionCost
   <> negate (toValue (lovelaceOf ((totalTransactionCost * 5) `divideInteger` 1_000)))
   <> adaOutScript
-  <> if marketOwnerPubKeyHash == sellerPubKeyHash then
+  <> if royaltiesPubKeyHash == sellerPubKeyHash then
         lovelaceValueOf 0
     else
         negate $ toValue (lovelaceOf ((totalTransactionCost * 40) `divideInteger` 1_000))
 
-data NFTStoreV1
+data CardanoMarketplace
 
-instance Scripts.ValidatorTypes NFTStoreV1 where
-  type DatumType NFTStoreV1 = ContractDatum
-  type RedeemerType NFTStoreV1 = ContractRedeemer
+instance Scripts.ValidatorTypes CardanoMarketplace where
+  type DatumType CardanoMarketplace = ContractDatum
+  type RedeemerType CardanoMarketplace = ContractRedeemer
 
-typedValidator :: ContractParams -> Scripts.TypedValidator NFTStoreV1
+typedValidator :: ContractParams -> Scripts.TypedValidator CardanoMarketplace
 typedValidator p =
-  Scripts.mkTypedValidator @NFTStoreV1
+  Scripts.mkTypedValidator @CardanoMarketplace
     ($$(PlutusTx.compile [||mkValidator||]) `PlutusTx.applyCode` PlutusTx.liftCode p)
     $$(PlutusTx.compile [||wrap||])
   where
@@ -199,7 +199,7 @@ scrAddress = scriptAddress . validator
 
 type ContractSchema =
   Endpoint "start" StartParams
-    .\/ Endpoint "grab" GrabParams
+    .\/ Endpoint "buy" BuyParams
 
 data StartParams = StartParams
     { spContractParams :: ContractParams
@@ -208,7 +208,7 @@ data StartParams = StartParams
     }
     deriving (Show, Generic, ToJSON, FromJSON)
 
-data GrabParams = GrabParams
+data BuyParams = BuyParams
     { gpContractParams :: ContractParams
     , gpContractDatum  :: ContractDatum
     , gpPassphrase     :: BS.ByteString
@@ -225,8 +225,8 @@ start sp = do
   logInfo @String $ "Address: " ++ show (scrAddress $ spContractParams sp)
   logInfo @String $ printf "Transaction executed, give to the script"
 
-grab :: AsContractError e  => GrabParams -> Contract w s e ()
-grab gp = do
+buy :: AsContractError e  => BuyParams -> Contract w s e ()
+buy gp = do
 
   -- Get UTXOs from backend for cover the min ada in the fee
   utxosBackend <-
@@ -267,8 +267,8 @@ grab gp = do
                           toValue minAdaTxOut <> Value.singleton (cdCurrencySymbol $ gpContractDatum gp) (cdTokenName $ gpContractDatum gp) (totalTokenFromScript - gpQuantity gp)
                       else mempty
 
-      valueToSeller = totalTransactionValue totalTransactionCost (adaOnlyValue $ totalValueFromScript <> negate valueToScript) (cdSellerPubkeyHash $ gpContractDatum gp) (unMarketOwnerPubkeyHash $ gpContractParams gp)
-      valueToMarketOwner = lovelaceValueOf if (totalTransactionCost * 40 `P.div` 1_000) < getLovelace minAdaTxOut then getLovelace minAdaTxOut else totalTransactionCost * 40 `P.div` 1_000
+      valueToSeller = totalTransactionValue totalTransactionCost (adaOnlyValue $ totalValueFromScript <> negate valueToScript) (cdSellerPubkeyHash $ gpContractDatum gp) (unRoyaltiesPubkeyHash $ gpContractParams gp)
+      valueToRoyalties = lovelaceValueOf if (totalTransactionCost * 40 `P.div` 1_000) < getLovelace minAdaTxOut then getLovelace minAdaTxOut else totalTransactionCost * 40 `P.div` 1_000
 
       valueToBackend = lovelaceValueOf (totalTransactionCost * 5 `P.div` 1_000) <> extractValueFromUTXO (snd backendUTXO)
 
@@ -276,26 +276,26 @@ grab gp = do
           <> (if valueToScript == mempty then mempty else Constraints.mustPayToOtherScript (validatorHash' $ gpContractParams gp) (Datum $ toBuiltinData $ gpContractDatum gp) valueToScript)
           <> Contraints.mustPayToPubKey (PaymentPubKeyHash $ cdSellerPubkeyHash $ gpContractDatum gp) valueToSeller
           <> Contraints.mustPayToPubKey (PaymentPubKeyHash $ unBackendPubkeyHash $ gpContractParams gp) valueToBackend
-          <> Contraints.mustPayToPubKey (PaymentPubKeyHash $ unMarketOwnerPubkeyHash $ gpContractParams gp) valueToMarketOwner
+          <> Contraints.mustPayToPubKey (PaymentPubKeyHash $ unRoyaltiesPubkeyHash $ gpContractParams gp) valueToRoyalties
           <> Contraints.mustSpendPubKeyOutput (fst backendUTXO)
           <> Contraints.mustBeSignedBy (PaymentPubKeyHash $ unBackendPubkeyHash $ gpContractParams gp)
 
-  unBalancedTx <- mkTxConstraints @NFTStoreV1 lookups tx
+  unBalancedTx <- mkTxConstraints @CardanoMarketplace lookups tx
   balancedTx <- balanceTx unBalancedTx
-  let signedTx = signTxMockWallet balancedTx (paymentPrivateKey $ fromSeed' $ NFTStoreV1.gpPassphrase gp) (PaymentPubKeyHash $ unBackendPubkeyHash $ gpContractParams gp)
+  let signedTx = signTxMockWallet balancedTx (paymentPrivateKey $ fromSeed' $ CardanoMarketplace.gpPassphrase gp) (PaymentPubKeyHash $ unBackendPubkeyHash $ gpContractParams gp)
 
   case signedTx of
     Left wae -> logInfo @String $ show wae
     Right stx -> do
       ledgerTx <- submitBalancedTx stx
       void $ awaitTxConfirmed $ getCardanoTxId ledgerTx
-      logInfo @String $ "collected gifts"
+      logInfo @String $ "Sale terminated"
 
 endpoints :: Contract () ContractSchema Text ()
-endpoints = awaitPromise (start' `select` grab') >> endpoints
+endpoints = awaitPromise (start' `select` buy') >> endpoints
   where
     start' = endpoint @"start" start
-    grab' = endpoint @"grab" grab
+    buy' = endpoint @"buy" buy
 
 extractValueFromUTXO :: ChainIndexTxOut -> Value
 extractValueFromUTXO utxo = case utxo of

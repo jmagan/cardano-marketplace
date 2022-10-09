@@ -13,7 +13,7 @@
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators #-}
 
-module Main (main, test1, extractNFTStoreCost) where
+module Main (main, test1, extractCost) where
 
 import           Codec.Serialise        (serialise)
 import           Control.Monad          (void)
@@ -24,8 +24,8 @@ import qualified Data.Map               as Map
 import           Ledger
 import           Ledger.CardanoWallet   (fromSeed')
 import qualified Ledger.Value           as Value
-import           NFTStoreV1
-import           Plutus.Trace
+import           CardanoMarketplace
+import           Plutus.Trace hiding (params)
 import qualified Plutus.V1.Ledger.Ada   as Ada
 import           Wallet.Emulator
 import           Wallet.Emulator.Wallet (toMockWallet)
@@ -47,7 +47,7 @@ walletPassphrase = BSL.toStrict $ serialise @Int 2
 w1 :: Wallet
 w1 =
   Wallet
-    { prettyWalletName = Just "Market Owner Wallet",
+    { prettyWalletName = Just "NFT Creator Wallet",
       getWalletId = getWalletId $ knownWallet 1
     }
 
@@ -96,7 +96,7 @@ test1ET = do
   h4 <- activateContractWallet w4 endpoints
 
   let params = ContractParams {
-    unMarketOwnerPubkeyHash = unPaymentPubKeyHash $ mockWalletPaymentPubKeyHash w1,
+    unRoyaltiesPubkeyHash = unPaymentPubKeyHash $ mockWalletPaymentPubKeyHash w1,
     unBackendPubkeyHash = unPaymentPubKeyHash $ mockWalletPaymentPubKeyHash w2
   }
 
@@ -113,7 +113,7 @@ test1ET = do
     spQuantity=10
   }
 
-  let grabParmas = GrabParams {
+  let buyParms = BuyParams {
     gpContractParams = params,
     gpPassphrase = walletPassphrase,
     gpContractDatum = datum,
@@ -124,7 +124,7 @@ test1ET = do
   void $ waitNSlots 10
   callEndpoint @"start" h3 startParams
   void $ waitNSlots 10
-  callEndpoint @"grab" h4 grabParmas
+  callEndpoint @"buy" h4 buyParms
   void $ waitNSlots 1
 
 
@@ -135,9 +135,9 @@ scriptConfig = Emulator.Extract.ScriptsConfig "output/script" cmd
     cmd = Emulator.Extract.Scripts Emulator.Extract.FullyAppliedValidators
 
 
-extractNFTStoreCost :: IO ()
-extractNFTStoreCost = do
-  (totalSize, exBudget) <- writeScriptsTo scriptConfig "nftStore" test1ET emCfg
+extractCost :: IO ()
+extractCost = do
+  (totalSize, exBudget) <- writeScriptsTo scriptConfig "Marketplace" test1ET emCfg
   putStrLn $ "Total size = " <> show totalSize
   putStrLn $ "ExBudget = " <> showExBudgetPerc exBudget
 
