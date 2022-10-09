@@ -1,0 +1,15 @@
+Executing units study
+
+
+Consume a full transaction with error without codes:
+
+Total size = Sum {getSum = 5948}
+ExBudget = ExBudget {exBudgetCPU = ExCPU 1541506241, exBudgetMemory = ExMemory 4673280}( exCPUPerc: 15, exMemoryPerc: 33)
+
+Consume a full transaction with error with codes:
+Total size = Sum {getSum = 5776}
+ExBudget = ExBudget {exBudgetCPU = ExCPU 1541506241, exBudgetMemory = ExMemory 4673280}( exCPUPerc: 15, exMemoryPerc: 33)
+
+Consume a full transaction without show function in errors:
+Total size = Sum {getSum = 5633}
+ExBudget = ExBudget {exBudgetCPU = ExCPU 1540940554, exBudgetMemory = ExMemory 4671380}( exCPUPerc: 15, exMemoryPerc: 33)

@@ -11,11 +11,11 @@ let
 
   haskell-nix = pkgs.haskell-nix;
 
-  plutus-starter = import ./pkgs {
+  cardano-marketplace = import ./pkgs {
     inherit pkgs haskell-nix sources plutus source-repo-override;
   };
 
 in
 {
-  inherit pkgs plutus-starter;
+  inherit pkgs cardano-marketplace;
 }

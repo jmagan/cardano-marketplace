@@ -1,13 +1,13 @@
 { pure ? false, source-repo-override ? { } }:
 let
   packages = import ./. { inherit source-repo-override; };
-  inherit (packages) pkgs plutus-starter project;
+  inherit (packages) pkgs cardano-marketplace project;
 
 in
   project.shellFor {
     withHoogle = false;
 
-    nativeBuildInputs = with plutus-starter; [
+    nativeBuildInputs = with cardano-marketplace; [
       hlint
       cabal-install
       haskell-language-server
